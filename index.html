@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive CSV Visualizer</title>
+    <!-- Importing a more modern font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        /* Using CSS variables for easier color management */
+        :root {
+            --primary-color: #007bff;
+            --success-color: #28a745;
+            --light-bg: rgba(255, 255, 255, 0.7);
+            --text-color: #333;
+            --border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        body { 
+            font-family: 'Poppins', sans-serif; 
+            margin: 0;
+            padding: 2em;
+            /* Adding a vibrant gradient background */
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* Main container with a "glassmorphism" effect */
+        #container { 
+            max-width: 800px; 
+            width: 100%;
+            background: var(--light-bg);
+            padding: 2.5em; 
+            border-radius: 15px; 
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        h1 { 
+            font-weight: 600;
+            margin-bottom: 0.5em;
+        }
+        
+        /* Custom styling for the file input */
+        #file-upload-wrapper {
+            margin: 1.5em 0;
+        }
+        
+        #csvFileInput {
+            display: none; /* Hide the default ugly input */
+        }
+
+        .file-upload-label {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #f8f9fa;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .file-upload-label:hover {
+            background-color: #e9ecef;
+            border-color: var(--primary-color);
+        }
+        #fileName {
+            margin-top: 10px;
+            font-style: italic;
+            color: #555;
+        }
+
+        /* Styling for the main action button */
+        button { 
+            padding: 0.8em 1.5em; 
+            font-size: 1.1em;
+            font-weight: 600;
+            background: linear-gradient(45deg, var(--success-color), #20c997);
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        button:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+        }
+
+        canvas { 
+            margin-top: 2em; 
+            background-color: #fff;
+            border-radius: 8px;
+        }
+
+        /* A more interesting CSS loading spinner */
+        #status .loader {
+            display: none;
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: var(--success-color);
+            border-radius: 50%;
+            margin: 1em auto 0;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>Interactive CSV Visualizer 📊</h1>
+        <p>Upload sales data to instantly generate an animated bar chart of average prices.</p>
+        
+        <div id="file-upload-wrapper">
+            <label for="csvFileInput" class="file-upload-label">Choose a CSV File</label>
+            <input type="file" id="csvFileInput" accept=".csv">
+            <div id="fileName">No file selected</div>
+        </div>
+        
+        <button onclick="processFile()">Generate Chart</button>
+        
+        <div id="status"><div class="loader"></div></div>
+        
+        <canvas id="resultsChart" width="700" height="400"></canvas>
+    </div>
+
+    <script>
+        const API_ENDPOINT = "https://fxzhqnw8tg.execute-api.eu-north-1.amazonaws.com/S3-CSV-Processor";
+
+        // Update file name display on selection
+        document.getElementById('csvFileInput').addEventListener('change', function() {
+            const fileName = this.files.length > 0 ? this.files[0].name : 'No file selected';
+            document.getElementById('fileName').textContent = fileName;
+        });
+
+        async function processFile() {
+            const fileInput = document.getElementById('csvFileInput');
+            const loader = document.querySelector('#status .loader');
+            
+            if (fileInput.files.length === 0) {
+                document.getElementById('fileName').textContent = 'Please select a file first!';
+                return;
+            }
+
+            loader.style.display = 'block';
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = async (event) => {
+                const fileContent = event.target.result;
+                try {
+                    const response = await fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain' },
+                        body: fileContent
+                    });
+                    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                    
+                    const data = await response.json();
+                    animateBarChart(data); // Call the new animation function
+
+                } catch (error) {
+                    document.getElementById('fileName').textContent = `Error: ${error.message}`;
+                    console.error(error);
+                } finally {
+                    loader.style.display = 'none';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // This function animates the bar chart drawing
+        function animateBarChart(data) {
+            const canvas = document.getElementById('resultsChart');
+            const ctx = canvas.getContext('2d');
+            let animationFrameId;
+
+            const padding = 60;
+            const chartWidth = canvas.width - 2 * padding;
+            const chartHeight = canvas.height - 2 * padding;
+            const barWidth = chartWidth / (data.length * 2);
+            const maxPrice = Math.max(...data.map(item => item.AveragePrice)) * 1.1; // Add 10% for padding
+
+            let progress = 0; // Animation progress from 0 to 1
+            const animationDuration = 1000; // 1 second
+            let startTime = null;
+
+            function draw(timestamp) {
+                if (!startTime) startTime = timestamp;
+                const elapsedTime = timestamp - startTime;
+                progress = Math.min(elapsedTime / animationDuration, 1);
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Draw Chart Title
+                ctx.fillStyle = '#333';
+                ctx.font = 'bold 18px Poppins';
+                ctx.textAlign = 'center';
+                ctx.fillText('Average Price by Category', canvas.width / 2, padding / 2);
+
+                // Draw Axes
+                ctx.beginPath();
+                ctx.moveTo(padding, padding);
+                ctx.lineTo(padding, chartHeight + padding);
+                ctx.lineTo(chartWidth + padding, chartHeight + padding);
+                ctx.strokeStyle = '#ccc';
+                ctx.stroke();
+
+                // Draw Bars and Labels
+                data.forEach((item, index) => {
+                    const barHeight = (item.AveragePrice / maxPrice) * chartHeight * progress; // Scale by progress
+                    const x = padding + (index * 2 * barWidth) + barWidth / 2;
+                    const y = chartHeight + padding - barHeight;
+
+                    // Draw bar
+                    ctx.fillStyle = `hsl(${index * 60 + 200}, 80%, 60%)`;
+                    ctx.fillRect(x, y, barWidth, barHeight);
+
+                    // Draw category label
+                    ctx.fillStyle = '#555';
+                    ctx.textAlign = 'center';
+                    ctx.font = '12px Poppins';
+                    ctx.fillText(item.Category, x + barWidth / 2, chartHeight + padding + 20);
+                    
+                    // Draw value label (only when animation is complete)
+                    if (progress === 1) {
+                        ctx.font = 'bold 12px Poppins';
+                        ctx.fillStyle = '#333';
+                        ctx.fillText(Math.round(item.AveragePrice), x + barWidth / 2, y - 8);
+                    }
+                });
+                
+                if (progress < 1) {
+                    animationFrameId = requestAnimationFrame(draw);
+                }
+            }
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            animationFrameId = requestAnimationFrame(draw);
+        }
+    </script>
+</body>
+</html>
